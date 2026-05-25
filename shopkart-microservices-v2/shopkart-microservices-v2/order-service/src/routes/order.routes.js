@@ -1,0 +1,18 @@
+const router=require('express').Router();
+const ctrl=require('../controllers/order.controller');
+const {protect}=require('../middleware/auth.middleware');
+const {adminOnly}=require('../middleware/admin.middleware');
+const validate=require('../middleware/validate.middleware');
+const {body}=require('express-validator');
+const placeV=[body('paymentMethod').isIn(['upi','card','netbanking','cod','emi','shopkart_pay']).withMessage('Invalid payment method')];
+router.use(protect);
+router.post('/place',placeV,validate,ctrl.placeOrder);
+router.get('/my',ctrl.getMyOrders);
+router.get('/track/:orderId',ctrl.trackOrder);
+router.get('/admin/all',adminOnly,ctrl.getAllOrders);
+router.get('/admin/stats',adminOnly,ctrl.getOrderStats);
+router.get('/:id',ctrl.getOrder);
+router.put('/:id/cancel',ctrl.cancelOrder);
+router.put('/:id/return',ctrl.returnOrder);
+router.patch('/admin/:id/status',adminOnly,ctrl.updateOrderStatus);
+module.exports=router;

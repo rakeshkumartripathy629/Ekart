@@ -1,0 +1,13 @@
+const router=require('express').Router();
+const ctrl=require('../controllers/support.controller');
+const {protect}=require('../middleware/auth.middleware');
+const {adminOnly}=require('../middleware/admin.middleware');
+router.use(protect);
+router.post('/',ctrl.createTicket);
+router.get('/my',ctrl.getMyTickets);
+router.get('/admin/all',adminOnly,ctrl.getAllTickets);
+router.patch('/admin/:id/status',adminOnly,ctrl.updateTicketStatus);
+router.get('/:id',ctrl.getTicket);
+router.post('/:id/reply',ctrl.replyTicket);
+router.patch('/:id/close',ctrl.closeTicket);
+module.exports=router;

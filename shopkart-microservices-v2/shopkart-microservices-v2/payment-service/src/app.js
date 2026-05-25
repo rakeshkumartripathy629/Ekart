@@ -1,0 +1,14 @@
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const { errorHandler, notFound } = require('./middleware/error.middleware');
+const routes = require('./routes/index');
+const app = express();
+app.use(cors({ origin: '*', credentials: true }));
+app.use(express.json());
+if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
+app.get('/api/health', (req, res) => res.json({ success: true, service: 'payment-service' }));
+app.use('/api', routes);
+app.use(notFound);
+app.use(errorHandler);
+module.exports = app;

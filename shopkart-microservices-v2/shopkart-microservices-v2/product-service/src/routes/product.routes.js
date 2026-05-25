@@ -1,0 +1,17 @@
+const router = require('express').Router();
+const ctrl = require('../controllers/product.controller');
+const { protect, optionalAuth } = require('../middleware/auth.middleware');
+const { adminOnly } = require('../middleware/admin.middleware');
+const multer = require('multer');
+const path = require('path');
+const storage = multer.diskStorage({destination:(req,file,cb)=>cb(null,'src/uploads/products'),filename:(req,file,cb)=>cb(null,`prod-${Date.now()}${path.extname(file.originalname)}`)});
+const upload = multer({storage,limits:{fileSize:5*1024*1024}});
+router.get('/', ctrl.getProducts);
+router.get('/featured', ctrl.getFeaturedProducts);
+router.get('/:id', ctrl.getProduct);
+router.post('/', protect, adminOnly, upload.array('images',5), ctrl.createProduct);
+router.put('/:id', protect, adminOnly, upload.array('images',5), ctrl.updateProduct);
+router.delete('/:id', protect, adminOnly, ctrl.deleteProduct);
+router.post('/:id/reviews', protect, ctrl.addReview);
+router.delete('/:id/reviews/:reviewId', protect, ctrl.deleteReview);
+module.exports = router;

@@ -1,0 +1,10 @@
+const router=require('express').Router();
+const ctrl=require('../controllers/payment.controller');
+const {protect}=require('../middleware/auth.middleware');
+const {adminOnly}=require('../middleware/admin.middleware');
+router.post('/confirm',ctrl.confirmPayment);
+router.post('/fail',ctrl.failPayment);
+router.get('/',protect,adminOnly,ctrl.getAllPayments);
+router.post('/refund',protect,adminOnly,ctrl.refundPayment);
+router.get('/:orderId',protect,ctrl.getPayment);
+module.exports=router;

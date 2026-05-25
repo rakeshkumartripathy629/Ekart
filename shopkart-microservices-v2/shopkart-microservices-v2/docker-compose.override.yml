@@ -1,0 +1,24 @@
+version: "3.8"
+# Development overrides — mounts source for hot reload
+services:
+  auth-service:
+    volumes: ["./auth-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]
+  product-service:
+    volumes: ["./product-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]
+  cart-service:
+    volumes: ["./cart-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]
+  order-service:
+    volumes: ["./order-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]
+  payment-service:
+    volumes: ["./payment-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]
+  notification-service:
+    volumes: ["./notification-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]
+  admin-service:
+    volumes: ["./admin-service:/app", "/app/node_modules"]
+    command: ["npx", "nodemon", "server.js"]

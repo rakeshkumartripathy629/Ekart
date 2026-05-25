@@ -1,0 +1,10 @@
+{
+  "name": "shopkart-shared",
+  "version": "1.0.0",
+  "description": "Shared Kafka, RabbitMQ clients and utilities",
+  "main": "index.js",
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "amqplib": "^0.10.3"
+  }
+}

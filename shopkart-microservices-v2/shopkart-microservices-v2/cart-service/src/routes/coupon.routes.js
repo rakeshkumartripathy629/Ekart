@@ -1,0 +1,11 @@
+const router=require('express').Router();
+const ctrl=require('../controllers/coupon.controller');
+const {protect}=require('../middleware/auth.middleware');
+const {adminOnly}=require('../middleware/admin.middleware');
+router.post('/validate',protect,ctrl.validateCoupon);
+router.get('/',protect,adminOnly,ctrl.getAllCoupons);
+router.post('/',protect,adminOnly,ctrl.createCoupon);
+router.put('/:id',protect,adminOnly,ctrl.updateCoupon);
+router.delete('/:id',protect,adminOnly,ctrl.deleteCoupon);
+router.patch('/:id/toggle',protect,adminOnly,ctrl.toggleCoupon);
+module.exports=router;

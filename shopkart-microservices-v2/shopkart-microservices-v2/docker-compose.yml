@@ -1,0 +1,326 @@
+version: '3.8'
+
+services:
+
+  # ═══════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ═══════════════════════════════════════════════
+
+  mongodb:
+    image: mongo:7
+    container_name: shopkart-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: shopkart
+      MONGO_INITDB_ROOT_PASSWORD: shopkart123
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - shopkart-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: shopkart-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass shopkart123
+    volumes:
+      - redis_data:/data
+    networks:
+      - shopkart-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "shopkart123", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Kafka ──────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: shopkart-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    networks:
+      - shopkart-net
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: shopkart-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - shopkart-net
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: shopkart-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: shopkart-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - shopkart-net
+
+  # ── RabbitMQ ───────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: shopkart-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"    # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: shopkart
+      RABBITMQ_DEFAULT_PASS: shopkart123
+      RABBITMQ_DEFAULT_VHOST: shopkart
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - shopkart-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════
+  # API GATEWAY (Nginx)
+  # ═══════════════════════════════════════════════
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: shopkart-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - PRODUCT_SERVICE_URL=http://product-service:3002
+      - CART_SERVICE_URL=http://cart-service:3003
+      - ORDER_SERVICE_URL=http://order-service:3004
+      - PAYMENT_SERVICE_URL=http://payment-service:3005
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3006
+      - ADMIN_SERVICE_URL=http://admin-service:3007
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-shopkart_super_secret_jwt}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  # ═══════════════════════════════════════════════
+  # MICROSERVICES
+  # ═══════════════════════════════════════════════
+
+  auth-service:
+    build: ./auth-service
+    container_name: shopkart-auth
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file: ./auth-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_auth?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  product-service:
+    build: ./product-service
+    container_name: shopkart-product
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file: ./product-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_product?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  cart-service:
+    build: ./cart-service
+    container_name: shopkart-cart
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    env_file: ./cart-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_cart?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  order-service:
+    build: ./order-service
+    container_name: shopkart-order
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    env_file: ./order-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_order?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  payment-service:
+    build: ./payment-service
+    container_name: shopkart-payment
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    env_file: ./payment-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_payment?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  notification-service:
+    build: ./notification-service
+    container_name: shopkart-notification
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    env_file: ./notification-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_notification?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+  admin-service:
+    build: ./admin-service
+    container_name: shopkart-admin
+    restart: unless-stopped
+    ports:
+      - "3007:3007"
+    env_file: ./admin-service/.env
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - RABBITMQ_URL=amqp://shopkart:shopkart123@rabbitmq:5672/shopkart
+      - REDIS_URL=redis://:shopkart123@redis:6379
+      - MONGO_URI=mongodb://shopkart:shopkart123@mongodb:27017/shopkart_admin?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - shopkart-net
+
+volumes:
+  mongo_data:
+  redis_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_log:
+  rabbitmq_data:
+
+networks:
+  shopkart-net:
+    driver: bridge
